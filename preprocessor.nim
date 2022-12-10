@@ -8,9 +8,11 @@
 #
 
 # Preprocessor support
-
 const
   c2nimSymbol = "C2NIM"
+
+when not compiles(Parser):
+  include cparser
 
 proc eatNewLine(p: var Parser, n: PNode) =
   if p.tok.xkind == pxLineComment:
@@ -589,7 +591,7 @@ proc parseDir(p: var Parser; sectionParser: SectionParser): PNode =
   case p.tok.s
   of "define":
     let hasParams = p.tok.xkind == pxDirectiveParLe
-    getTok(p)
+    rawGetTok(p) # this is part of m4 define section, which shouldn't expand
     expectIdent(p)
     let isDefOverride = p.options.toPreprocess.hasKey(p.tok.s)
     saveContext(p)

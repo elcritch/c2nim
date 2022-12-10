@@ -205,6 +205,9 @@ proc openParser*(p: var Parser, filename: string,
   p.classHierarchyGP = @[]
   new(p.tok)
 
+proc debugTok(p: Parser): string =
+  result = debugTok(p.lex, p.tok[])
+
 proc parMessage(p: Parser, msg: TMsgKind, arg = "") =
   lexMessage(p.lex, msg, arg)
 
@@ -1315,7 +1318,8 @@ proc getEnumIdent(n: PNode): PNode =
 
 proc buildStmtList(a: PNode): PNode
 
-include preprocessor
+when not compiles(c2nimSymbol):
+  include preprocessor
 
 proc enumFields(p: var Parser, constList, stmtList: PNode): PNode =
   type EnumFieldKind = enum isNormal, isNumber, isAlias
