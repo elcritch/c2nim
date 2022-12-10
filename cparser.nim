@@ -506,6 +506,30 @@ proc declKeyword(p: Parser, s: string): bool =
     result = p.options.flags.contains(pfCpp)
   else: discard
 
+proc isAttribute(p: ref Token): tuple[isattr: bool, hasparam: bool] =
+  case p.s
+  of "__attribute__", "__alignof", "__declspec":
+    result = (isattr: true, hasparam: true)
+  of "alignas":
+    result = (isattr: true, hasparam: true)
+  of "__unaligned", "__packed":
+    result = (isattr: true, hasparam: false)
+  else: discard
+
+proc skipAttribute(p: var Parser) =
+  ## skip type attributes
+  ## TODO: these should be changed to pragmas
+  let (_, hasparam) = p.tok.isAttribute()
+  if hasparam:
+    getTok(p, nil)
+    eat(p, pxParLe, nil)
+    while p.tok.xkind notin {pxEof, pxParRi}:
+      echo "skipping"
+      getTok(p, nil)
+    eat(p, pxParRi, nil)
+  else:
+    getTok(p, nil)
+
 proc stmtKeyword(s: string): bool =
   case s
   of  "if", "for", "while", "do", "switch", "break", "continue", "return",
@@ -993,6 +1017,9 @@ proc parseStructBody(p: var Parser, stmtList: PNode,
         baseTyp = typeAtom(p)
       else:
         continue
+    elif p.tok.isAttribute().isattr:
+      skipAttribute(p)
+      continue
     else:
       baseTyp = typeAtom(p)
 
