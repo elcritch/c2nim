@@ -1380,7 +1380,7 @@ proc enumFields(p: var Parser, constList, stmtList: PNode): PNode =
 
     if fieldsComplete: parError(p, "expected '}'")
     var e = skipIdent(p, skEnumField)
-    discard skipAttributes()
+    discard skipAttributes(p)
     if p.tok.xkind == pxAsgn:
       getTok(p, e)
       var c = constantExpression(p, e)
