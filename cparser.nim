@@ -779,6 +779,7 @@ proc pointersOf(p: Parser; a: PNode; count: int): PNode =
 proc pointer(p: var Parser, a: PNode): PNode =
   result = a
   var i = 0
+  var isBlock = false
   let isConstA = skipConst(p)
   while true:
     if p.tok.xkind == pxStar:
@@ -791,6 +792,8 @@ proc pointer(p: var Parser, a: PNode): PNode =
       getTok(p, result)
       discard skipConst(p)
       result = newPointerTy(p, result)
+      isBlock = true
+      echo "POINTER: ", repr result
     elif p.tok.xkind == pxAmp and pfCpp in p.options.flags:
       getTok(p, result)
       let isConstB = skipConst(p)
@@ -810,6 +813,9 @@ proc pointer(p: var Parser, a: PNode): PNode =
     else: break
   if i > 0:
     result = pointersOf(p, a, i)
+    if isBlock:
+      result.comment = "block type"
+    echo "done:POINTER: ", repr result
 
 proc newProcPragmas(p: Parser): PNode =
   result = newNodeP(nkPragma, p)
@@ -871,8 +877,6 @@ proc parseTypeSuffix(p: var Parser, typ: PNode, isParam: bool = false): PNode =
       addSon(result, parseTypeSuffix(p, tmp))
   of pxParLe:
     # function pointer:
-    echo "\nPTYPSUFF:1: ", p.debugTok
-    echo "PTYPSUFF:result: ", repr result
     var procType = newNodeP(nkProcTy, p)
     var pragmas = newProcPragmas(p)
     var params = newNodeP(nkFormalParams, p)
@@ -1168,22 +1172,17 @@ proc declarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string)
 proc directDeclarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string): PNode =
   case p.tok.xkind
   of pxSymbol:
-    echo "DD: SYMBOL: ", p.debugTok
     skipAttribute(p)
     origName = p.tok.s
     ident[] = skipIdent(p, skParam)
   of pxParLe:
     getTok(p, a)
-    echo "DD:TOK: ", p.debugTok
     if p.tok.xkind in {pxStar, pxAmp, pxAmpAmp, pxSymbol, pxHat}:
       result = declarator(p, a, ident, origName)
-      # echo "DECLARATOR: ", repr result
       eat(p, pxParRi, result)
   else:
     discard
-  echo "suffix:DECLARATOR: ", repr a
   result = parseTypeSuffix(p, a, true)
-  echo ""
 
 proc declarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string): PNode =
   directDeclarator(p, pointer(p, a), ident, origName)
@@ -1286,7 +1285,11 @@ proc parseFunctionPointerDecl(p: var Parser, rettyp: PNode): PNode =
     eat(p, pxScope)
     addSon(pragmas, newIdentNodeP("memberfuncptr", p))
 
-  if p.tok.xkind in {pxStar, pxHat}: getTok(p, params)
+  if p.tok.xkind == pxStar:
+    getTok(p, params)
+  elif p.tok.xkind == pxHat:
+    getTok(p, params)
+    addSon(pragmas, newIdentNodeP("clangBlock", p))
   #else: parError(p, "expected '*'")
   discard skipAttributes(p)
   if p.inTypeDef > 0: markTypeIdent(p, nil)
