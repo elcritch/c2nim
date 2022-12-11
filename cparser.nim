@@ -1950,7 +1950,7 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
       parseFormalParams(p, params, pragmas)
       echo "END: really func"
       closeContextB(p)
-    except ERetryParsing:
+    except IOError:
       echo "failed: really func"
       backtrackContextB(p)
       return parseVarDecl(p, baseTyp, rettyp, origName, varKind)
