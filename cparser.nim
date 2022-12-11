@@ -541,16 +541,12 @@ proc skipAttribute(p: var Parser): bool {.discardable.} =
     for i in 1..parens:
       eat(p, pxParLe, nil)
     while p.tok.xkind != pxParRi:
-      echo "skipping ", p.debugTok()
       getTok(p, nil)
       ## get args
       if p.tok.xkind == pxParLe:
-        echo "paren skipping ", p.debugTok()
         getTok(p, nil)
-        echo "paren skipping ", p.debugTok()
         while p.tok.xkind != pxParRi:
           getTok(p, nil)
-          echo "paren next ", p.debugTok()
         eat(p, pxParRi, nil)
 
     for i in 1..parens:
@@ -689,7 +685,6 @@ proc skipClassAfterEnum(p: var Parser, n: PNode) =
 proc typeAtom(p: var Parser; isTypeDef=false): PNode =
   var isConst = skipConst(p)
   expectIdent(p)
-  echo ""
   case p.tok.s
   of "void":
     result = newNodeP(nkNilLit, p) # little hack
@@ -716,7 +711,6 @@ proc typeAtom(p: var Parser; isTypeDef=false): PNode =
     var isSizeT = false
     var isDone = false
     while p.tok.xkind == pxSymbol and (isBaseIntType(p.tok.s) or p.tok.s == "char"):
-      echo "typeAtom:loop: ", debugTok(p)
       if p.tok.s == "unsigned":
         isUnsigned = true
       elif p.tok.s == "signed":
@@ -727,7 +721,6 @@ proc typeAtom(p: var Parser; isTypeDef=false): PNode =
         isDone = true
         add(x, p.tok.s)
       getTok(p, nil)
-      echo "typeAtom:loop:next: ", debugTok(p)
       if skipConst(p):
         isConst = true
 
@@ -737,12 +730,9 @@ proc typeAtom(p: var Parser; isTypeDef=false): PNode =
     
     # closeContext(p)
 
-    echo "done:typeAtom: ", debugTok(p), " :: ", x
-
     if x.len == 0: x = "int"
     let xx = if isSizeT: "csize_t" elif isUnsigned: "cu" & x else: "c" & x
     result = mangledIdent(xx, p, skDontMangle)
-    echo "done:typeAtom: ", debugTok(p), " :: ", x
   elif p.tok.s == "size_t":
     getTok(p, nil)
     result = mangledIdent("csize_t", p, skDontMangle)
@@ -815,7 +805,6 @@ proc pointer(p: var Parser, a: PNode): PNode =
       a.flags.incl nfBlockPtr
       # result.comment = "block type"
     result = pointersOf(p, a, i)
-    echo "done:POINTER: ", repr result
 
 proc newProcPragmas(p: Parser): PNode =
   result = newNodeP(nkPragma, p)
@@ -847,7 +836,6 @@ proc parseFormalParams(p: var Parser, params, pragmas: PNode)
 proc parseTypeSuffix(p: var Parser, typ: PNode, isParam: bool = false): PNode =
   result = typ
   let isBlock = nfBlockPtr in typ.flags
-  echo "parseTypeSuffix:TYP: ", repr isBlock
   case p.tok.xkind
   of pxBracketLe:
     getTok(p, result)
@@ -919,23 +907,17 @@ proc typeName(p: var Parser): PNode = abstractDeclarator(p, typeAtom(p))
 
 proc parseField(p: var Parser, kind: TNodeKind; pointers: var int): PNode =
   if p.tok.xkind == pxParLe:
-    echo "parseField:le: ", p.debugTok
     getTok(p, nil)
     while p.tok.xkind == pxStar:
-      echo "parseField:le:star: ", p.debugTok
       getTok(p, nil)
       inc pointers
-    # skipAttribute(p)
-    echo "parseField:le:tok: ", p.debugTok
     result = parseField(p, kind, pointers)
     eat(p, pxParRi, result)
   else:
-    echo "parseField: ", p.debugTok
     expectIdent(p)
     if kind == nkRecList: result = fieldIdent(p.tok.s, p)
     else: result = mangledIdent(p.tok.s, p, skField)
     getTok(p, result)
-    echo "done:parseField: ", p.debugTok
 
 proc cppImportName(p: Parser, origName: string,
                     genericParams: PNode = nil,
@@ -1207,7 +1189,6 @@ proc parseParam(p: var Parser, params: PNode) =
   var name: PNode
   var origName = ""
   typ = declarator(p, typ, addr name, origName)
-  # echo "parseParams:POST: ", repr typ
   if name == nil:
     var idx = sonsLen(params)
     name = newIdentNodeP(p.options.paramPrefix & $idx, p)
@@ -1231,26 +1212,19 @@ proc parseParam(p: var Parser, params: PNode) =
   addSon(params, x)
 
 proc parseFormalParams(p: var Parser, params, pragmas: PNode) =
-  echo "parseFormalParams:1"
   eat(p, pxParLe, params)
   while p.tok.xkind notin {pxEof, pxParRi}:
     if p.tok.xkind == pxDotDotDot:
       addSon(pragmas, newIdentNodeP("varargs", p))
       getTok(p, pragmas)
       break
-    echo "parseFormalParams:2"
     parseParam(p, params)
-    echo "parseFormalParams:4"
     if p.tok.xkind != pxComma: break
     getTok(p, params)
-    echo "parseFormalParams:4"
   eat(p, pxParRi, params)
-  echo "parseFormalParams:5"
   if p.tok.xkind == pxArrow and pfCpp in p.options.flags:
-    echo "parseFormalParams:6"
     getTok(p, params)
     params[0] = typeDesc(p)
-  echo "parseFormalParams:7"
 
 proc parseCallConv(p: var Parser, pragmas: PNode) =
   while p.tok.xkind == pxSymbol:
@@ -1333,7 +1307,6 @@ proc otherTypeDef(p: var Parser, section, typ: PNode) =
     t = pointer(p, t)
   if p.tok.xkind == pxParLe:
     # function pointer: typedef typ (*name)();
-    echo "FUNC PTR DECL: "
     var x = parseFunctionPointerDecl(p, t)
     name = x[0]
     t = x[2]
@@ -1957,7 +1930,6 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
 
   case p.tok.xkind
   of pxParLe:
-    echo "really func"
     # really a function!
     saveContextB(p)
 
@@ -1967,13 +1939,10 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
       addDiscardable(origName, pragmas, p)
     # unless it isn't, bug #146: std::vector<int64_t> foo(10);
     try:
-      echo "START: really func params"
       parseFormalParams(p, params, pragmas)
-      echo "END: really func"
       closeContextB(p)
     # except IOError:
     except ERetryParsing:
-      echo "failed: really func"
       backtrackContextB(p)
       return parseVarDecl(p, baseTyp, rettyp, origName, varKind)
 
@@ -1992,9 +1961,7 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
     addSon(result, exportSym(p, name, origName), emptyNode, genericParams)
     addSon(result, params, pragmas, emptyNode) # no exceptions
     skipThrowSpecifier(p, pragmas)
-    echo "DECL-NO-SEMI: ", debugTok(p)
     skipAttributes(p)
-    echo "post:DECL-NO-SEMI: ", debugTok(p)
     case p.tok.xkind
     of pxSemicolon:
       getTok(p)
