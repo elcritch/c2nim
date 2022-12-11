@@ -1258,6 +1258,7 @@ proc parseFunctionPointerDecl(p: var Parser, rettyp: PNode): PNode =
   #else: parError(p, "expected '*'")
   if p.inTypeDef > 0: markTypeIdent(p, nil)
   var name = skipIdentExport(p, if p.inTypeDef > 0: skType else: skVar, true)
+  parseTypeSuffix(p)
   eat(p, pxParRi, name)
   parseFormalParams(p, params, pragmas)
   addSon(procType, params)
