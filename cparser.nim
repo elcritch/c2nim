@@ -509,30 +509,52 @@ proc declKeyword(p: Parser, s: string): bool =
     result = p.options.flags.contains(pfCpp)
   else: discard
 
-proc isAttribute(p: ref Token): tuple[isattr: bool, hasparam: bool] =
-  case p.s
-  of "__attribute__", "__alignof", "__declspec":
-    result = (isattr: true, hasparam: true)
+proc isAttribute(t: ref Token): tuple[isattr: bool, parens: uint] =
+  if t.xkind != pxSymbol:
+    return (isattr: false, parens: 0'u)
+  case t.s
+  of "__attribute__":
+    result = (isattr: true, parens: 2'u)
+  of "__alignof", "__declspec":
+    result = (isattr: true, parens: 1'u)
   of "alignas":
-    result = (isattr: true, hasparam: true)
+    result = (isattr: true, parens: 1'u)
   of "__unaligned", "__packed":
-    result = (isattr: true, hasparam: false)
+    result = (isattr: true, parens: 0'u)
   else: discard
 
-proc skipAttribute(p: var Parser) =
+proc skipAttribute(p: var Parser): bool {.discardable.} =
   ## skip type attributes
   ## TODO: these should be changed to pragmas
-  let (_, hasparam) = p.tok.isAttribute()
-  if hasparam:
+  result = true
+  let (isattr, parens) = p.tok.isAttribute()
+  if not isattr: return false
+
+  if parens == 0:
     getTok(p, nil)
-    eat(p, pxParLe, nil)
-    while p.tok.xkind notin {pxEof, pxParRi}:
-      echo "skipping"
-      getTok(p, nil)
-    eat(p, pxParRi, nil)
   else:
     getTok(p, nil)
+    for i in 1..parens:
+      eat(p, pxParLe, nil)
+    while p.tok.xkind != pxParRi:
+      echo "skipping ", p.debugTok()
+      getTok(p, nil)
+      ## get args
+      if p.tok.xkind == pxParLe:
+        echo "paren skipping ", p.debugTok()
+        getTok(p, nil)
+        echo "paren skipping ", p.debugTok()
+        while p.tok.xkind != pxParRi:
+          getTok(p, nil)
+          echo "paren next ", p.debugTok()
+        eat(p, pxParRi, nil)
 
+    for i in 1..parens:
+      eat(p, pxParRi, nil)
+
+proc skipAttributes(p: var Parser): bool {.discardable.} =
+  while skipAttribute(p):
+    result = true
 proc stmtKeyword(s: string): bool =
   case s
   of  "if", "for", "while", "do", "switch", "break", "continue", "return",
@@ -544,11 +566,17 @@ proc stmtKeyword(s: string): bool =
 
 proc typeDesc(p: var Parser): PNode
 
-proc isIntType(s: string): bool =
+proc isBaseIntType(s: string): bool =
   case s
-  of "short", "int", "long", "float", "double", "signed", "unsigned", "size_t":
+  of "short", "int", "long", "float", "double", "signed", "unsigned":
     result = true
   else: discard
+
+proc isIntType(s: string): bool =
+  if isBaseIntType(s):
+    return true
+  elif s == "size_t":
+    return true
 
 proc skipConst(p: var Parser): bool =
   while p.tok.xkind == pxSymbol and
@@ -656,6 +684,7 @@ proc skipClassAfterEnum(p: var Parser, n: PNode) =
 proc typeAtom(p: var Parser; isTypeDef=false): PNode =
   var isConst = skipConst(p)
   expectIdent(p)
+  echo ""
   case p.tok.s
   of "void":
     result = newNodeP(nkNilLit, p) # little hack
@@ -674,38 +703,44 @@ proc typeAtom(p: var Parser; isTypeDef=false): PNode =
     eat(p, pxParLe, result)
     result.add expression(p)
     eat(p, pxParRi, result)
-  elif isIntType(p.tok.s):
+  elif isBaseIntType(p.tok.s):
     var x = ""
-    #getTok(p, nil)
+    # saveContext(p)
     var isUnsigned = false
     var isSigned = false
     var isSizeT = false
-    var isLong = false
-    while p.tok.xkind == pxSymbol and (isIntType(p.tok.s) or p.tok.s == "char"):
+    var isDone = false
+    while p.tok.xkind == pxSymbol and (isBaseIntType(p.tok.s) or p.tok.s == "char"):
+      echo "typeAtom:loop: ", debugTok(p)
       if p.tok.s == "unsigned":
         isUnsigned = true
-      elif p.tok.s == "size_t":
-        if isUnsigned or isSigned or isSigned or isLong:
-          break
-        isSizeT = true
       elif p.tok.s == "signed":
         isSigned = true
       elif p.tok.s == "int":
-        discard
-      elif p.tok.s == "long":
-        isLong = true
-        add(x, p.tok.s)
+        isDone = true
       else:
+        isDone = true
         add(x, p.tok.s)
       getTok(p, nil)
-      if (isSigned or isUnsigned) and p.tok.xkind == pxSymbol and isTypeDef:
-        add(x, p.tok.s)
-        getTok(p, nil)
+      echo "typeAtom:loop:next: ", debugTok(p)
+      if skipConst(p):
+        isConst = true
 
-      if skipConst(p): isConst = true
+    if not isDone and isTypeDef and (isSigned or isUnsigned) and p.tok.xkind == pxSymbol:
+      add(x, p.tok.s)
+      getTok(p, nil)
+    
+    # closeContext(p)
+
+    echo "done:typeAtom: ", debugTok(p), " :: ", x
+
     if x.len == 0: x = "int"
     let xx = if isSizeT: "csize_t" elif isUnsigned: "cu" & x else: "c" & x
     result = mangledIdent(xx, p, skDontMangle)
+    echo "done:typeAtom: ", debugTok(p), " :: ", x
+  elif p.tok.s == "size_t":
+    getTok(p, nil)
+    result = mangledIdent("csize_t", p, skDontMangle)
   else:
     result = mangledIdent(p.tok.s, p, skType)
     getTok(p, result)
@@ -1026,8 +1061,7 @@ proc parseStructBody(p: var Parser, stmtList: PNode,
         baseTyp = typeAtom(p)
       else:
         continue
-    elif p.tok.isAttribute().isattr:
-      skipAttribute(p)
+    elif skipAttributes(p):
       continue
     else:
       baseTyp = typeAtom(p)
@@ -1194,14 +1228,14 @@ proc parseCallConv(p: var Parser, pragmas: PNode) =
     of "__syscall": addSon(pragmas, newIdentNodeP("syscall", p))
     of "__fastcall": addSon(pragmas, newIdentNodeP("fastcall", p))
     of "__safecall": addSon(pragmas, newIdentNodeP("safecall", p))
-    of "__declspec":
+    of "__declspec", "__attribute__":
       getTok(p, nil)
       eat(p, pxParLe, nil)
-      while p.tok.xkind notin {pxEof, pxParRi}: getTok(p, nil)
-    of "__attribute__":
-      getTok(p, nil)
-      eat(p, pxParLe, nil)
-      while p.tok.xkind notin {pxEof, pxParRi}: getTok(p, nil)
+      var parcnt = 0
+      while p.tok.xkind notin {pxEof, pxParRi} or parcnt > 0:
+        if p.tok.xkind == pxParLe: parcnt.inc
+        elif p.tok.xkind == pxParRi: parcnt.dec
+        getTok(p, nil)
     else: break
     getTok(p, nil)
 
@@ -1907,6 +1941,9 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
     addSon(result, exportSym(p, name, origName), emptyNode, genericParams)
     addSon(result, params, pragmas, emptyNode) # no exceptions
     skipThrowSpecifier(p, pragmas)
+    echo "DECL-NO-SEMI: ", debugTok(p)
+    skipAttributes(p)
+    echo "post:DECL-NO-SEMI: ", debugTok(p)
     case p.tok.xkind
     of pxSemicolon:
       getTok(p)
