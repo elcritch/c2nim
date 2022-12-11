@@ -803,8 +803,8 @@ proc pointer(p: var Parser, a: PNode): PNode =
   if i > 0:
     if isBlock:
       a.flags.incl nfBlockPtr
-      # result.comment = "block type"
     result = pointersOf(p, a, i)
+    skipAttribute(p)
 
 proc newProcPragmas(p: Parser): PNode =
   result = newNodeP(nkPragma, p)
@@ -1089,6 +1089,7 @@ proc parseStructBody(p: var Parser, stmtList: PNode,
     eat(p, pxSemicolon)
 
   eat(p, pxCurlyRi, result)
+  skipAttributes(p);
 
 proc enumPragmas(p: Parser, name: PNode; origName: string): PNode =
   result = newNodeP(nkPragmaExpr, p)
