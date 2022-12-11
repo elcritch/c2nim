@@ -519,6 +519,8 @@ proc isAttribute(t: ref Token): tuple[isattr: bool, parens: uint] =
     result = (isattr: true, parens: 1'u)
   of "alignas":
     result = (isattr: true, parens: 1'u)
+  of "__asm":
+    result = (isattr: true, parens: 1'u)
   of "__unaligned", "__packed":
     result = (isattr: true, parens: 0'u)
   else: discard
