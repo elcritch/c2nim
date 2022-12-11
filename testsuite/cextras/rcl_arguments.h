@@ -38,8 +38,7 @@ typedef struct rcl_arguments_s
   rcl_arguments_impl_t * impl;
 } rcl_arguments_t;
 
-void qsort_r(void *__base, size_t __nel, size_t __width, void *,
-     int (* _Nonnull __compar)(void *, const void *, const void *));
+
 
 /// The command-line flag that delineates the start of ROS arguments.
 #define RCL_ROS_ARGS_FLAG "--ros-args"

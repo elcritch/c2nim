@@ -786,6 +786,11 @@ proc pointer(p: var Parser, a: PNode): PNode =
       getTok(p, result)
       discard skipConst(p)
       result = newPointerTy(p, result)
+    elif p.tok.xkind == pxHat: # Apple 'block' pointers
+      inc(i)
+      getTok(p, result)
+      discard skipConst(p)
+      result = newPointerTy(p, result)
     elif p.tok.xkind == pxAmp and pfCpp in p.options.flags:
       getTok(p, result)
       let isConstB = skipConst(p)
@@ -866,6 +871,8 @@ proc parseTypeSuffix(p: var Parser, typ: PNode, isParam: bool = false): PNode =
       addSon(result, parseTypeSuffix(p, tmp))
   of pxParLe:
     # function pointer:
+    echo "\nPTYPSUFF:1: ", p.debugTok
+    echo "PTYPSUFF:result: ", repr result
     var procType = newNodeP(nkProcTy, p)
     var pragmas = newProcPragmas(p)
     var params = newNodeP(nkFormalParams, p)
@@ -1161,17 +1168,22 @@ proc declarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string)
 proc directDeclarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string): PNode =
   case p.tok.xkind
   of pxSymbol:
+    echo "DD: SYMBOL: ", p.debugTok
     skipAttribute(p)
     origName = p.tok.s
     ident[] = skipIdent(p, skParam)
   of pxParLe:
     getTok(p, a)
+    echo "DD:TOK: ", p.debugTok
     if p.tok.xkind in {pxStar, pxAmp, pxAmpAmp, pxSymbol, pxHat}:
       result = declarator(p, a, ident, origName)
+      # echo "DECLARATOR: ", repr result
       eat(p, pxParRi, result)
   else:
     discard
+  echo "suffix:DECLARATOR: ", repr a
   result = parseTypeSuffix(p, a, true)
+  echo ""
 
 proc declarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string): PNode =
   directDeclarator(p, pointer(p, a), ident, origName)
@@ -1192,6 +1204,7 @@ proc parseParam(p: var Parser, params: PNode) =
   var name: PNode
   var origName = ""
   typ = declarator(p, typ, addr name, origName)
+  # echo "parseParams:POST: ", repr typ
   if name == nil:
     var idx = sonsLen(params)
     name = newIdentNodeP(p.options.paramPrefix & $idx, p)
@@ -1273,7 +1286,7 @@ proc parseFunctionPointerDecl(p: var Parser, rettyp: PNode): PNode =
     eat(p, pxScope)
     addSon(pragmas, newIdentNodeP("memberfuncptr", p))
 
-  if p.tok.xkind == pxStar: getTok(p, params)
+  if p.tok.xkind in {pxStar, pxHat}: getTok(p, params)
   #else: parError(p, "expected '*'")
   discard skipAttributes(p)
   if p.inTypeDef > 0: markTypeIdent(p, nil)
@@ -1313,6 +1326,7 @@ proc otherTypeDef(p: var Parser, section, typ: PNode) =
     t = pointer(p, t)
   if p.tok.xkind == pxParLe:
     # function pointer: typedef typ (*name)();
+    echo "FUNC PTR DECL: "
     var x = parseFunctionPointerDecl(p, t)
     name = x[0]
     t = x[2]
@@ -1950,7 +1964,8 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
       parseFormalParams(p, params, pragmas)
       echo "END: really func"
       closeContextB(p)
-    except IOError:
+    # except IOError:
+    except ERetryParsing:
       echo "failed: really func"
       backtrackContextB(p)
       return parseVarDecl(p, baseTyp, rettyp, origName, varKind)
