@@ -793,7 +793,6 @@ proc pointer(p: var Parser, a: PNode): PNode =
       discard skipConst(p)
       result = newPointerTy(p, result)
       isBlock = true
-      echo "POINTER: ", repr result
     elif p.tok.xkind == pxAmp and pfCpp in p.options.flags:
       getTok(p, result)
       let isConstB = skipConst(p)
@@ -812,9 +811,10 @@ proc pointer(p: var Parser, a: PNode): PNode =
         result.add(b)
     else: break
   if i > 0:
-    result = pointersOf(p, a, i)
     if isBlock:
-      result.comment = "block type"
+      a.flags.incl nfBlockPtr
+      # result.comment = "block type"
+    result = pointersOf(p, a, i)
     echo "done:POINTER: ", repr result
 
 proc newProcPragmas(p: Parser): PNode =
@@ -846,6 +846,8 @@ proc parseFormalParams(p: var Parser, params, pragmas: PNode)
 
 proc parseTypeSuffix(p: var Parser, typ: PNode, isParam: bool = false): PNode =
   result = typ
+  let isBlock = nfBlockPtr in typ.flags
+  echo "parseTypeSuffix:TYP: ", repr isBlock
   case p.tok.xkind
   of pxBracketLe:
     getTok(p, result)
@@ -887,6 +889,8 @@ proc parseTypeSuffix(p: var Parser, typ: PNode, isParam: bool = false): PNode =
       closeContextB(p)
 
       addSon(procType, params)
+      if isBlock:
+        addSon(pragmas, newIdentNodeP("cblock", p))
       addPragmas(procType, pragmas)
       result = parseTypeSuffix(p, procType)
 
@@ -1289,7 +1293,7 @@ proc parseFunctionPointerDecl(p: var Parser, rettyp: PNode): PNode =
     getTok(p, params)
   elif p.tok.xkind == pxHat:
     getTok(p, params)
-    addSon(pragmas, newIdentNodeP("clangBlock", p))
+    addSon(pragmas, newIdentNodeP("cblock", p))
   #else: parError(p, "expected '*'")
   discard skipAttributes(p)
   if p.inTypeDef > 0: markTypeIdent(p, nil)
