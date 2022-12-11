@@ -7,7 +7,7 @@
 #    distribution, for details about the copyright.
 #
 
-import std / [strutils, os, times, md5, parseopt, strscans]
+import std / [strutils, os, osproc, times, md5, parseopt, strscans]
 
 import compiler/ [llstream, ast, renderer, options, msgs, nversion]
 
@@ -80,6 +80,30 @@ proc isCppFile(s: string): bool =
 
 when not declared(NimCompilerApiVersion):
   type AbsoluteFile = string
+
+proc ccpreprocess(infile: string, options: PParserOptions; includes: seq[string]): AbsoluteFile =
+  ## use C compiler to preprocess
+  let cc = "/opt/homebrew/bin/gcc-12"
+  var args = newSeq[string]()
+  args.add(["-E", "-CC", "-dI"])
+  args.add([infile, "-o", infile & ".pp"])
+  for pth in includes: args.add("-I" & pth)
+  let outp = execProcess(cc, args=args, options={poUsePath, poStdErrToStdOut})
+
+  echo "OUTP: ", outp
+
+  # var stream = llStreamOpen(AbsoluteFile infile, fmRead)
+  # if stream == nil:
+  #   when declared(NimCompilerApiVersion):
+  #     rawMessage(gConfig, errGenerated, "cannot open file: " & infile)
+  #   else:
+  #     rawMessage(errGenerated, "cannot open file: " & infile)
+  # let isCpp = pfCpp notin options.flags and isCppFile(infile)
+  # var p: Parser
+  # if isCpp: options.flags.incl pfCpp
+  # openParser(p, infile, stream, options)
+
+  # closeParser(p)
 
 proc parse(infile: string, options: PParserOptions; dllExport: var PNode): PNode =
   var stream = llStreamOpen(AbsoluteFile infile, fmRead)
@@ -181,10 +205,15 @@ proc myRenderModule(tree: PNode; filename: string, renderFlags: TRenderFlags) =
   f.close
 
 proc main(infiles: seq[string], outfile: var string,
-          options: PParserOptions, concat: bool) =
+          options: PParserOptions,
+          concat, preprocess: bool,
+          includes: seq[string]) =
   var start = getTime()
   var dllexport: PNode = nil
-  if concat:
+  if preprocess:
+    for fl in infiles:
+      discard ccpreprocess(fl, options, includes)
+  elif concat:
     var tree = newNode(nkStmtList)
     for infile in infiles:
       let m = parse(infile.addFileExt("h"), options, dllexport)
@@ -217,6 +246,8 @@ var
   infiles = newSeq[string](0)
   outfile = ""
   concat = false
+  preprocess = false
+  includes = newSeq[string](0)
   parserOptions = newParserOptions()
 for kind, key, val in getopt():
   case kind
@@ -232,6 +263,7 @@ for kind, key, val in getopt():
       quit(0)
     of "o", "out": outfile = val
     of "concat": concat = true
+    of "preprocess": preprocess = true
     of "spliceheader":
       quit "[Error] 'spliceheader' doesn't exist anymore" &
            " use a list of files and --concat instead"
@@ -243,6 +275,8 @@ for kind, key, val in getopt():
       if key.normalize == "render":
         if not parserOptions.renderFlags.setOption(val):
           quit("[Error] unknown option: " & key)
+      elif key == "I":
+        includes.add(val)
       elif not parserOptions.setOption(key, val):
         quit("[Error] unknown option: " & key)
   of cmdEnd: assert(false)
@@ -250,4 +284,4 @@ if infiles.len == 0:
   # no filename has been given, so we show the help:
   stdout.write(Usage)
 else:
-  main(infiles, outfile, parserOptions, concat)
+  main(infiles, outfile, parserOptions, concat, preprocess, includes)

@@ -11,6 +11,8 @@
 const
   c2nimSymbol = "C2NIM"
 
+import compiler/pathutils
+
 when not compiles(Parser):
   include cparser
 
@@ -660,6 +662,14 @@ proc parseDir(p: var Parser; sectionParser: SectionParser): PNode =
     p.options.privateRules.add(pattern)
     eatNewLine(p, nil)
   else:
-    # ignore unimportant/unknown directive ("undef", "pragma", "error")
+    try:
+      let num = parseInt(p.tok.s)
+      # ignore unimportant/unknown directive ("undef", "pragma", "error")
+      rawGetTok(p)
+      let flidx = fileInfoIdx(gConfig, AbsoluteFile p.tok.s)
+      let ln = TLineInfo(line: num.uint16, col: 0, fileIndex: flidx)
+      echo "SKIP: ", num, " :: ",  repr ln
+    except ValueError:
+      discard
     skipLine(p)
 
