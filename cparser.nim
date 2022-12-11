@@ -1166,7 +1166,7 @@ proc directDeclarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var s
     ident[] = skipIdent(p, skParam)
   of pxParLe:
     getTok(p, a)
-    if p.tok.xkind in {pxStar, pxAmp, pxAmpAmp, pxSymbol}:
+    if p.tok.xkind in {pxStar, pxAmp, pxAmpAmp, pxSymbol, pxHat}:
       result = declarator(p, a, ident, origName)
       eat(p, pxParRi, result)
   else:
@@ -1198,8 +1198,10 @@ proc parseParam(p: var Parser, params: PNode) =
   elif p.options.isArray.hasKey(origName) and typ.kind == nkPtrTy:
     typ = makeUncheckedArray(p, typ)
 
+  skipAttributes(p)
   var x = newNodeP(nkIdentDefs, p)
   addSon(x, name, typ)
+
   if p.tok.xkind == pxAsgn:
     # for the wxWidgets wrapper we need to transform 'auto x = foo' into
     # 'x = foo' cause 'x: auto = foo' is not really supported by Nim yet...
