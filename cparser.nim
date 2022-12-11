@@ -680,15 +680,21 @@ proc typeAtom(p: var Parser; isTypeDef=false): PNode =
     var isUnsigned = false
     var isSigned = false
     var isSizeT = false
+    var isLong = false
     while p.tok.xkind == pxSymbol and (isIntType(p.tok.s) or p.tok.s == "char"):
       if p.tok.s == "unsigned":
         isUnsigned = true
       elif p.tok.s == "size_t":
+        if isUnsigned or isSigned or isSigned or isLong:
+          break
         isSizeT = true
       elif p.tok.s == "signed":
         isSigned = true
       elif p.tok.s == "int":
         discard
+      elif p.tok.s == "long":
+        isLong = true
+        add(x, p.tok.s)
       else:
         add(x, p.tok.s)
       getTok(p, nil)
