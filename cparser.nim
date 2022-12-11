@@ -521,6 +521,8 @@ proc isAttribute(t: ref Token): tuple[isattr: bool, parens: uint] =
     result = (isattr: true, parens: 1'u)
   of "__asm":
     result = (isattr: true, parens: 1'u)
+  of "_Nullable", "_Nonnull":
+    result = (isattr: true, parens: 0'u)
   of "__unaligned", "__packed":
     result = (isattr: true, parens: 0'u)
   else: discard
@@ -557,6 +559,7 @@ proc skipAttribute(p: var Parser): bool {.discardable.} =
 proc skipAttributes(p: var Parser): bool {.discardable.} =
   while skipAttribute(p):
     result = true
+
 proc stmtKeyword(s: string): bool =
   case s
   of  "if", "for", "while", "do", "switch", "break", "continue", "return",
@@ -901,17 +904,23 @@ proc typeName(p: var Parser): PNode = abstractDeclarator(p, typeAtom(p))
 
 proc parseField(p: var Parser, kind: TNodeKind; pointers: var int): PNode =
   if p.tok.xkind == pxParLe:
+    echo "parseField:le: ", p.debugTok
     getTok(p, nil)
     while p.tok.xkind == pxStar:
+      echo "parseField:le:star: ", p.debugTok
       getTok(p, nil)
       inc pointers
+    # skipAttribute(p)
+    echo "parseField:le:tok: ", p.debugTok
     result = parseField(p, kind, pointers)
     eat(p, pxParRi, result)
   else:
+    echo "parseField: ", p.debugTok
     expectIdent(p)
     if kind == nkRecList: result = fieldIdent(p.tok.s, p)
     else: result = mangledIdent(p.tok.s, p, skField)
     getTok(p, result)
+    echo "done:parseField: ", p.debugTok
 
 proc cppImportName(p: Parser, origName: string,
                     genericParams: PNode = nil,
@@ -1152,6 +1161,7 @@ proc declarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string)
 proc directDeclarator(p: var Parser, a: PNode, ident: ptr PNode; origName: var string): PNode =
   case p.tok.xkind
   of pxSymbol:
+    skipAttribute(p)
     origName = p.tok.s
     ident[] = skipIdent(p, skParam)
   of pxParLe:
@@ -1203,19 +1213,26 @@ proc parseParam(p: var Parser, params: PNode) =
   addSon(params, x)
 
 proc parseFormalParams(p: var Parser, params, pragmas: PNode) =
+  echo "parseFormalParams:1"
   eat(p, pxParLe, params)
   while p.tok.xkind notin {pxEof, pxParRi}:
     if p.tok.xkind == pxDotDotDot:
       addSon(pragmas, newIdentNodeP("varargs", p))
       getTok(p, pragmas)
       break
+    echo "parseFormalParams:2"
     parseParam(p, params)
+    echo "parseFormalParams:4"
     if p.tok.xkind != pxComma: break
     getTok(p, params)
+    echo "parseFormalParams:4"
   eat(p, pxParRi, params)
+  echo "parseFormalParams:5"
   if p.tok.xkind == pxArrow and pfCpp in p.options.flags:
+    echo "parseFormalParams:6"
     getTok(p, params)
     params[0] = typeDesc(p)
+  echo "parseFormalParams:7"
 
 proc parseCallConv(p: var Parser, pragmas: PNode) =
   while p.tok.xkind == pxSymbol:
@@ -1256,6 +1273,7 @@ proc parseFunctionPointerDecl(p: var Parser, rettyp: PNode): PNode =
 
   if p.tok.xkind == pxStar: getTok(p, params)
   #else: parError(p, "expected '*'")
+  discard skipAttributes(p)
   if p.inTypeDef > 0: markTypeIdent(p, nil)
   var name = skipIdentExport(p, if p.inTypeDef > 0: skType else: skVar, true)
   name = parseTypeSuffix(p, name)
@@ -1916,6 +1934,7 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
 
   case p.tok.xkind
   of pxParLe:
+    echo "really func"
     # really a function!
     saveContextB(p)
 
@@ -1925,11 +1944,15 @@ proc declarationWithoutSemicolon(p: var Parser; genericParams: PNode = emptyNode
       addDiscardable(origName, pragmas, p)
     # unless it isn't, bug #146: std::vector<int64_t> foo(10);
     try:
+      echo "START: really func params"
       parseFormalParams(p, params, pragmas)
+      echo "END: really func"
       closeContextB(p)
     except ERetryParsing:
+      echo "failed: really func"
       backtrackContextB(p)
       return parseVarDecl(p, baseTyp, rettyp, origName, varKind)
+
 
     if pfCpp in p.options.flags and p.tok.xkind == pxSymbol and
         p.tok.s == "const":
@@ -3639,14 +3662,14 @@ proc statement(p: var Parser): PNode =
   assert result != nil
 
 proc parseStrict(p: var Parser): PNode =
-  try:
+  # try:
     result = newNodeP(nkStmtList, p)
     getTok(p) # read first token
     while p.tok.xkind != pxEof:
       var s = statement(p)
       if s.kind != nkEmpty: embedStmts(result, s)
-  except ERetryParsing:
-    parError(p, getCurrentExceptionMsg())
+  # except ERetryParsing:
+    # parError(p, getCurrentExceptionMsg())
     #"Uncaught parsing exception raised")
 
 proc parseWithSyncPoints(p: var Parser): PNode =
