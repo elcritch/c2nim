@@ -83,27 +83,42 @@ when not declared(NimCompilerApiVersion):
 
 proc ccpreprocess(infile: string, options: PParserOptions; includes: seq[string]): AbsoluteFile =
   ## use C compiler to preprocess
+  let outfile = infile & ".pre"
+  let postfile = infile & ".pp"
   let cc = "/opt/homebrew/bin/gcc-12"
   var args = newSeq[string]()
   args.add(["-E", "-CC", "-dI"])
-  args.add([infile, "-o", infile & ".pp"])
+  args.add([infile, "-o", outfile])
   for pth in includes: args.add("-I" & pth)
   let outp = execProcess(cc, args=args, options={poUsePath, poStdErrToStdOut})
-
   echo "OUTP: ", outp
 
-  # var stream = llStreamOpen(AbsoluteFile infile, fmRead)
-  # if stream == nil:
-  #   when declared(NimCompilerApiVersion):
-  #     rawMessage(gConfig, errGenerated, "cannot open file: " & infile)
-  #   else:
-  #     rawMessage(errGenerated, "cannot open file: " & infile)
-  # let isCpp = pfCpp notin options.flags and isCppFile(infile)
-  # var p: Parser
-  # if isCpp: options.flags.incl pfCpp
-  # openParser(p, infile, stream, options)
+  var stream = llStreamOpen(AbsoluteFile outfile, fmRead)
+  if stream == nil:
+    when declared(NimCompilerApiVersion):
+      rawMessage(gConfig, errGenerated, "cannot open file: " & outfile)
+    else:
+      rawMessage(errGenerated, "cannot open file: " & outfile)
+  let isCpp = pfCpp notin options.flags and isCppFile(outfile)
+  var p: Parser
+  if isCpp: options.flags.incl pfCpp
+  openParser(p, outfile, stream, options)
+  let rawNodes = parseRemoveIncludes(p)
+  closeParser(p)
 
-  # closeParser(p)
+  let tfl = open(postfile, fmWrite)
+  for node in rawNodes:
+    case node.kind:
+    of nkComesFrom:
+      discard
+      tfl.write("\n")
+    of nkTripleStrLit:
+      tfl.write(node.strVal)
+    else:
+      discard
+  tfl.close()
+
+
 
 proc parse(infile: string, options: PParserOptions; dllExport: var PNode): PNode =
   var stream = llStreamOpen(AbsoluteFile infile, fmRead)

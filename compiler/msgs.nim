@@ -34,7 +34,6 @@ proc makeCString*(s: string): Rope =
   add(res, '\"')
   add(result, rope(res))
 
-
 proc newFileInfo(fullPath: AbsoluteFile, projPath: RelativeFile): TFileInfo =
   result.fullPath = fullPath
   #shallow(result.fullPath)

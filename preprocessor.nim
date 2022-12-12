@@ -12,6 +12,7 @@ const
   c2nimSymbol = "C2NIM"
 
 import compiler/pathutils
+import compiler/msgs
 
 when not compiles(Parser):
   include cparser
@@ -673,3 +674,41 @@ proc parseDir(p: var Parser; sectionParser: SectionParser): PNode =
       discard
     skipLine(p)
 
+proc parseRemoveIncludes*(p: var Parser): PNode =
+
+  # pxVerbatim, pxDirective
+  proc parseSect(p: var Parser): PNode = 
+    echo "parse sect!"
+    result = emptyNode
+  
+  proc parseLineDir(p: var Parser): PNode = 
+    try:
+      let num = parseInt(p.tok.s)
+      # ignore unimportant/unknown directive ("undef", "pragma", "error")
+      rawGetTok(p)
+      let li = newLineInfo(gConfig, AbsoluteFile p.tok.s, num, 0)
+      # let li = TLineInfo(line: num.uint16, col: 0, fileIndex: flidx)
+      echo "SKIP: ", num, " :: ", toFileName(gConfig, li)
+      result = newNodeI(nkComesFrom, li)
+    except ValueError:
+      result = emptyNode
+    skipLine(p)
+    # eatNewLine(p, nil)
+  
+  result = newNode(nkStmtList)
+  while true:
+    if p.tok.xkind == pxEof:
+      break
+
+    while p.tok.xkind in {pxDirective}:
+      if p.tok.xkind == pxEof: break
+      result.add parseLineDir(p)
+
+    var code = newNodeP(nkTripleStrLit, p)
+    while p.tok.xkind notin {pxEof, pxDirective}:
+      getTok(p)
+      code.strVal &= p.tok.s 
+    result.add(code)
+
+  echo "done parsing preprocessed C file"
+  
